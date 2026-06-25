@@ -1,3 +1,6 @@
+__pycache__
 pco_types
+output
 deps
 .vscode
+*.probundle
