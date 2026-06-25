@@ -3,12 +3,12 @@
 import os
 import struct
 import sys
-import datetime
 import json
 
 from pathlib import Path
+from helpers import current_iso_time
 
-import presentation_pb2 as pp7
+from pco_types import presentation_pb2 as pp7
 from google.protobuf.json_format import MessageToJson
 
 
@@ -232,7 +232,7 @@ def build_manifest(bundle_path: str, pres, assets: list[dict]) -> dict:
     return {
         "bundle_file": os.path.basename(bundle_path),
         "bundle_size_mb": round(bundle_size, 2),
-        "extracted_at": datetime.utcnow().isoformat() + "Z",
+        "extracted_at": current_iso_time(),
         "pro_file": Path(bundle_path).stem + ".pro",
         "presentation": {
             "name": pres.name,
