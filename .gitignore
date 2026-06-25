@@ -1,6 +1,9 @@
 __pycache__
+.DS_Store
 pco_types
-output
+output*
 deps
 .vscode
 *.probundle
+*.json
+in
