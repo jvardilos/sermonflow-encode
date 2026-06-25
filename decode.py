@@ -251,18 +251,16 @@ def build_manifest(bundle_path: str, pres, assets: list[dict]) -> dict:
         "cue_groups": cue_groups,
     }
 
-def decode(bundle: str):
-    # TODO: Change this to smth in google drive
-    out = "output/"
-    if False: # Extract media included
-        extracted = extract_bundle(bundle, os.path.join(out, "assets"))
+def decode(bundle: str, out_dir: str, extract: bool):
+    if extract: # Extract media included
+        extracted = extract_bundle(bundle, os.path.join(out_dir, "assets"))
     else:
         # Extract only the .pro file (fast — skip media)
         print("Reading bundle (--extract-assets not set, extracting .pro only)...")
         extracted = []
         for internal_path, data_offset, data_size in _scan_zip_entries(bundle):
             if internal_path.endswith(".pro"):
-                pro_save = os.path.join(out, os.path.basename(internal_path))
+                pro_save = os.path.join(out_dir, os.path.basename(internal_path))
                 _copy_entry(bundle, data_offset, data_size, pro_save)
                 print(f"  extracted: {os.path.basename(internal_path)} ({data_size:,} bytes)")
                 extracted.append({
@@ -273,7 +271,7 @@ def decode(bundle: str):
                 })
 
     # --- Step 2: Decode .pro ---
-    pro_files = list(Path(out).rglob("*.pro"))
+    pro_files = list(Path(out_dir).rglob("*.pro"))
     if not pro_files:
         print("ERROR: No .pro file extracted")
         sys.exit(1)
@@ -286,14 +284,14 @@ def decode(bundle: str):
 
     # --- Step 3: Write presentation JSON ---
     pres_json = MessageToJson(pres, indent=2)
-    pres_json_path = os.path.join(out, "presentation.json")
+    pres_json_path = os.path.join(out_dir, "presentation.json")
     with open(pres_json_path, "w") as f:
         f.write(pres_json)
     print(f"Wrote: {pres_json_path}")
 
     # --- Step 4: Inventory assets and build manifest ---
-    if False:
-        assets = inventory_assets(os.path.join(out, "assets"), pres)
+    if extract:
+        assets = inventory_assets(os.path.join(out_dir, "assets"), pres)
     else:
         # Build asset list from .pro references only (no extracted files)
         assets = []
@@ -325,7 +323,7 @@ def decode(bundle: str):
                                 a["referenced_by_cues"].append(cue.uuid.string)
 
     manifest = build_manifest(bundle, pres, assets)
-    manifest_path = os.path.join(out, "manifest.json")
+    manifest_path = os.path.join(out_dir, "manifest.json")
     with open(manifest_path, "w") as f:
         json.dump(manifest, f, indent=2)
     print(f"Wrote: {manifest_path}")

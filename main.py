@@ -4,7 +4,7 @@ from decode import decode
 
 
 def main():
-    decode("message.probundle")
+    decode("message.probundle", "output", False)
     
 
 if __name__ == "__main__":
