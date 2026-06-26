@@ -285,11 +285,11 @@ def _build_blank_cue(pres) -> str:
     cue = pres.cues.add()
     cue.uuid.string = _new_uuid()
     cue.completion_action_type = COMPLETION_ACTION_TYPE_LAST
-    # cue.is_enabled = True  # field absent from Cue proto
+    cue.isEnabled = True
 
     action = cue.actions.add()
     action.uuid.string = _new_uuid()
-    # action.is_enabled = True  # field absent from Action proto
+    action.isEnabled = True
     action.type = ACTION_TYPE_PRESENTATION_SLIDE
     action.slide.presentation.base_slide.size.width = 1920.0
     action.slide.presentation.base_slide.size.height = 1080.0
@@ -312,13 +312,13 @@ def _build_media_cue(pres, slide: Slide) -> str:
     cue = pres.cues.add()
     cue.uuid.string = _new_uuid()
     cue.completion_action_type = COMPLETION_ACTION_TYPE_LAST
-    # cue.is_enabled = True
+    cue.isEnabled = True
 
     # ── Action 1: empty canvas ────────────────────────────────────────────
     a1 = cue.actions.add()
     a1.uuid.string = _new_uuid()
     a1.label.text = slide.label
-    # a1.is_enabled = True
+    a1.isEnabled = True
     a1.type = ACTION_TYPE_PRESENTATION_SLIDE
     a1.slide.presentation.base_slide.size.width = slide.width
     a1.slide.presentation.base_slide.size.height = slide.height
@@ -328,7 +328,7 @@ def _build_media_cue(pres, slide: Slide) -> str:
     # ── Action 2: foreground media ────────────────────────────────────────
     a2 = cue.actions.add()
     a2.uuid.string = _new_uuid()
-    # a2.is_enabled = True
+    a2.isEnabled = True
     a2.type = ACTION_TYPE_MEDIA
     a2.media.layer_type = LAYER_TYPE_FOREGROUND
 
