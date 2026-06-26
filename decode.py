@@ -1,9 +1,11 @@
+"""Decode a ProPresenter 7 .probundle back into media files + JSON metadata."""
+
 import os
 import struct
 import sys
 import json
-
 from pathlib import Path
+
 from helpers import current_iso_time
 
 from pco_types import presentation_pb2 as pp7
@@ -13,6 +15,18 @@ IMAGE_EXTS = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v"}
 AUDIO_EXTS = {".mp3", ".wav", ".aac", ".m4a"}
 
+
+def _media_type(ext: str) -> str:
+    if ext in IMAGE_EXTS:
+        return "image"
+    if ext in VIDEO_EXTS:
+        return "video"
+    if ext in AUDIO_EXTS:
+        return "audio"
+    return "other"
+
+
+# ══ ZIP scanning ═══════════════════════════════════════════════════════════════
 
 def _scan_zip_entries(bundle_path: str):
     """
@@ -148,26 +162,16 @@ def _normalize_zip_path(internal_path: str) -> str:
     return norm
 
 
-def extract_bundle(
-    bundle_path: str, output_dir: str, skip_extensions: set[str] | None = None
-) -> list[dict]:
+def extract_bundle(bundle_path: str, output_dir: str) -> list[dict]:
     """
     Extract all files from the .probundle ZIP using seeking (no full-file read).
 
-    skip_extensions: set of lowercase extensions to skip, e.g. {'.mov'} to skip video.
     Returns list of {filename, internal_path, saved_path, size_bytes}.
     """
     os.makedirs(output_dir, exist_ok=True)
     extracted = []
 
     for internal_path, data_offset, data_size in _scan_zip_entries(bundle_path):
-        ext = Path(internal_path).suffix.lower()
-        if skip_extensions and ext in skip_extensions:
-            print(
-                f"  skipped:   {os.path.basename(internal_path)} ({data_size:,} bytes)"
-            )
-            continue
-
         norm = _normalize_zip_path(internal_path)
         dest = os.path.join(output_dir, norm)
         _copy_entry(bundle_path, data_offset, data_size, dest)
@@ -185,6 +189,8 @@ def extract_bundle(
     return extracted
 
 
+# ══ inventory & manifest ═══════════════════════════════════════════════════════
+
 def inventory_assets(output_dir: str, pres) -> list[dict]:
     """Inventory all media files and cross-reference with cue actions."""
     assets = []
@@ -194,21 +200,12 @@ def inventory_assets(output_dir: str, pres) -> list[dict]:
                 continue
             fpath = os.path.join(root, fname)
             ext = Path(fname).suffix.lower()
-            if ext in IMAGE_EXTS:
-                ftype = "image"
-            elif ext in VIDEO_EXTS:
-                ftype = "video"
-            elif ext in AUDIO_EXTS:
-                ftype = "audio"
-            else:
-                ftype = "other"
-
             assets.append(
                 {
                     "filename": fname,
                     "path": os.path.relpath(fpath, output_dir),
                     "size_mb": round(os.path.getsize(fpath) / 1024 / 1024, 2),
-                    "type": ftype,
+                    "type": _media_type(ext),
                     "format": ext.lstrip("."),
                     "referenced_by_cues": [],
                 }
@@ -265,104 +262,55 @@ def build_manifest(bundle_path: str, pres, assets: list[dict]) -> dict:
     }
 
 
-def decode(bundle: str, out_dir: str, extract: bool):
-    if extract:  # Extract media included
-        extracted = extract_bundle(bundle, os.path.join(out_dir, "assets"))
-    else:
-        # Extract only the .pro file (fast — skip media)
-        print("Reading bundle (--extract-assets not set, extracting .pro only)...")
-        extracted = []
-        for internal_path, data_offset, data_size in _scan_zip_entries(bundle):
-            if internal_path.endswith(".pro"):
-                pro_save = os.path.join(out_dir, os.path.basename(internal_path))
-                _copy_entry(bundle, data_offset, data_size, pro_save)
-                print(
-                    f"  extracted: {os.path.basename(internal_path)} ({data_size:,} bytes)"
-                )
-                extracted.append(
-                    {
-                        "filename": os.path.basename(internal_path),
-                        "internal_path": internal_path,
-                        "saved_path": os.path.basename(internal_path),
-                        "size_bytes": data_size,
-                    }
-                )
+# ══ orchestration ══════════════════════════════════════════════════════════════
 
-    # --- Step 2: Decode .pro ---
+def _load_presentation(out_dir: str):
+    """Parse the first extracted .pro file into a Presentation proto."""
     pro_files = list(Path(out_dir).rglob("*.pro"))
     if not pro_files:
         print("ERROR: No .pro file extracted")
         sys.exit(1)
 
-    pro_path = str(pro_files[0])
+    pro_path = pro_files[0]
     print(f"Decoding: {pro_path}")
-    with open(pro_path, "rb") as f:
-        pres = pp7.Presentation()
-        pres.ParseFromString(f.read())
+    pres = pp7.Presentation()
+    pres.ParseFromString(pro_path.read_bytes())
+    return pres
 
-    # --- Step 3: Write presentation JSON ---
-    pres_json = MessageToJson(pres, indent=2)
-    pres_json_path = os.path.join(out_dir, "presentation.json")
-    with open(pres_json_path, "w") as f:
-        f.write(pres_json)
-    print(f"Wrote: {pres_json_path}")
 
-    # --- Step 4: Inventory assets and build manifest ---
-    if extract:
-        assets = inventory_assets(os.path.join(out_dir, "assets"), pres)
-    else:
-        # Build asset list from .pro references only (no extracted files)
-        assets = []
-        seen = set()
-        for cue in pres.cues:
-            for action in cue.actions:
-                if action.WhichOneof("ActionTypeData") == "media":
-                    local = action.media.element.url.local
-                    fname = os.path.basename(local.path)
-                    if fname not in seen:
-                        seen.add(fname)
-                        ext = Path(fname).suffix.lower()
-                        ftype = (
-                            "image"
-                            if ext in IMAGE_EXTS
-                            else (
-                                "video"
-                                if ext in VIDEO_EXTS
-                                else "audio" if ext in AUDIO_EXTS else "other"
-                            )
-                        )
-                        assets.append(
-                            {
-                                "filename": fname,
-                                "path": local.path,
-                                "root": local.root,
-                                "type": ftype,
-                                "format": ext.lstrip("."),
-                                "referenced_by_cues": [cue.uuid.string],
-                            }
-                        )
-                    else:
-                        for a in assets:
-                            if a["filename"] == fname:
-                                a["referenced_by_cues"].append(cue.uuid.string)
+def _write_json(path: str, payload) -> None:
+    with open(path, "w") as f:
+        if isinstance(payload, str):
+            f.write(payload)
+        else:
+            json.dump(payload, f, indent=2)
+    print(f"Wrote: {path}")
 
-    manifest = build_manifest(bundle, pres, assets)
-    manifest_path = os.path.join(out_dir, "manifest.json")
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2)
-    print(f"Wrote: {manifest_path}")
 
-    # --- Summary ---
+def _print_summary(pres, assets: list[dict]) -> None:
     print("\n--- Summary ---")
     print(f"  Presentation: {pres.name}")
     print(f"  UUID:         {pres.uuid.string}")
     print(f"  Cues:         {len(pres.cues)}")
     print(f"  Cue groups:   {len(pres.cue_groups)}")
     for cg in pres.cue_groups:
-        print(
-            f"    Group {cg.group.uuid.string[:8]}... → {len(cg.cue_identifiers)} cues"
-        )
+        print(f"    Group {cg.group.uuid.string[:8]}... → {len(cg.cue_identifiers)} cues")
     print(f"  Assets referenced in .pro: {len(assets)}")
     for a in assets:
         label = f"  {a.get('size_mb', '?')} MB" if "size_mb" in a else ""
         print(f"    {a['type']:6s}  {a['filename']}{label}")
+
+
+def decode(bundle: str, out_dir: str) -> None:
+    """Extract a .probundle, decode its .pro, and write presentation + manifest JSON."""
+    extract_bundle(bundle, os.path.join(out_dir, "assets"))
+
+    pres = _load_presentation(out_dir)
+
+    _write_json(os.path.join(out_dir, "presentation.json"), MessageToJson(pres, indent=2))
+
+    assets = inventory_assets(os.path.join(out_dir, "assets"), pres)
+    manifest = build_manifest(bundle, pres, assets)
+    _write_json(os.path.join(out_dir, "manifest.json"), manifest)
+
+    _print_summary(pres, assets)

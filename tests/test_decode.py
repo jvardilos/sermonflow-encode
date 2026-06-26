@@ -115,17 +115,6 @@ class TestExtractBundle:
         results = extract_bundle(str(bundle), str(tmp_path / "out"))
         assert len(results) == 2
 
-    def test_skip_extensions_filters_out_files(self, tmp_path):
-        bundle = tmp_path / "test.probundle"
-        bundle.write_bytes(make_probundle({
-            "Pres.pro": b"\x00" * 64,
-            "Media/Assets/clip.mov": b"\x00" * 128,
-        }))
-        results = extract_bundle(str(bundle), str(tmp_path / "out"), skip_extensions={".mov"})
-        names = [r["filename"] for r in results]
-        assert "clip.mov" not in names
-        assert "Pres.pro" in names
-
     def test_returns_correct_size_bytes(self, tmp_path):
         content = b"\xff" * 256
         bundle = tmp_path / "test.probundle"
@@ -192,19 +181,19 @@ class TestDecode:
     def test_creates_presentation_json(self, tmp_path, encoded_bundle):
         bundle_path, _ = encoded_bundle
         out = str(tmp_path / "decoded")
-        decode(bundle_path, out, extract=False)
+        decode(bundle_path, out)
         assert os.path.exists(os.path.join(out, "presentation.json"))
 
     def test_creates_manifest_json(self, tmp_path, encoded_bundle):
         bundle_path, _ = encoded_bundle
         out = str(tmp_path / "decoded")
-        decode(bundle_path, out, extract=False)
+        decode(bundle_path, out)
         assert os.path.exists(os.path.join(out, "manifest.json"))
 
     def test_presentation_json_is_valid_json(self, tmp_path, encoded_bundle):
         bundle_path, _ = encoded_bundle
         out = str(tmp_path / "decoded")
-        decode(bundle_path, out, extract=False)
+        decode(bundle_path, out)
         with open(os.path.join(out, "presentation.json")) as f:
             data = json.load(f)
         assert isinstance(data, dict)
@@ -212,31 +201,24 @@ class TestDecode:
     def test_manifest_json_is_valid_json(self, tmp_path, encoded_bundle):
         bundle_path, _ = encoded_bundle
         out = str(tmp_path / "decoded")
-        decode(bundle_path, out, extract=False)
+        decode(bundle_path, out)
         with open(os.path.join(out, "manifest.json")) as f:
             data = json.load(f)
         assert "presentation" in data
 
-    def test_extract_true_writes_asset_files(self, tmp_path, encoded_bundle):
+    def test_writes_asset_files(self, tmp_path, encoded_bundle):
         bundle_path, _ = encoded_bundle
         out = str(tmp_path / "decoded")
-        decode(bundle_path, out, extract=True)
+        decode(bundle_path, out)
         assets_dir = Path(out) / "assets"
         all_files = [f for f in assets_dir.rglob("*") if f.is_file()]
         assert len(all_files) > 0
-
-    def test_extract_false_skips_media(self, tmp_path, encoded_bundle):
-        bundle_path, _ = encoded_bundle
-        out = str(tmp_path / "decoded")
-        decode(bundle_path, out, extract=False)
-        media_dir = Path(out) / "assets" / "Media"
-        assert not media_dir.exists()
 
     def test_no_pro_file_exits(self, tmp_path):
         bundle = tmp_path / "empty.probundle"
         bundle.write_bytes(make_probundle({"not_a_pro.txt": b"\x00"}))
         with pytest.raises(SystemExit):
-            decode(str(bundle), str(tmp_path / "out"), extract=False)
+            decode(str(bundle), str(tmp_path / "out"))
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

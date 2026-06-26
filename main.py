@@ -49,7 +49,7 @@ def main() -> None:
     encode(BUNDLE_PATH, IN_DIR, PRESENTATION_NAME)
 
     print("\n=== DECODE ===")
-    decode(BUNDLE_PATH, OUT_DIR, extract=True)
+    decode(BUNDLE_PATH, OUT_DIR)
 
     print("\n=== VERIFY ===")
     verify_roundtrip(IN_DIR, OUT_DIR)
