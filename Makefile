@@ -48,7 +48,7 @@ generate: setup ProPresenter7-Proto
 clean:
 	rm -rf $(PCO_DIR) $(VENV)
 
-distclean: clean
+rmrepo:
 	rm -rf ProPresenter7-Proto
 
 # ── help ─────────────────────────────────────────────────────────────────────

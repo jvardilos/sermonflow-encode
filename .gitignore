@@ -5,7 +5,5 @@ __init__.py
 pco_types
 output*
 deps
-.vscode
 *.probundle
-*.json
 in
