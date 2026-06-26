@@ -112,6 +112,7 @@ class Slide:
                 f"Supported: {sorted(_IMAGE_FMT) + sorted(_VIDEO_FMT)}"
             )
 
+
 def _detect_mov_format(path: str) -> str:
     """Detect codec in a .mov/.mp4 by scanning moov atom for codec FourCC."""
     try:
@@ -176,6 +177,7 @@ def _detect_video_duration(path: str) -> float:
     except Exception:
         return 0.0
 
+
 def _detect_image_size(path: str) -> tuple[float, float]:
     """Read width/height from TIFF/PNG/JPEG without Pillow."""
     ext = Path(path).suffix.lower()
@@ -224,6 +226,7 @@ def _detect_image_size(path: str) -> tuple[float, float]:
         pass
     return 1920.0, 1080.0
 
+
 def _build_application_info(pres):
     """Fill in applicationInfo exactly as seen in the real bundle."""
     ai = pres.application_info
@@ -238,6 +241,7 @@ def _build_application_info(pres):
 
 def _new_uuid() -> str:
     return str(uuid.uuid4()).upper()
+
 
 def _build_presentation(name: str, slides: list[Slide]) -> tuple[object, list[str]]:
     """
@@ -274,6 +278,7 @@ def _build_presentation(name: str, slides: list[Slide]) -> tuple[object, list[st
         ci.string = uid
 
     return pres, cue_uuids
+
 
 def _build_blank_cue(pres) -> str:
     """Add a blank/spacer cue with a single empty slide action. Returns cue UUID."""
@@ -347,6 +352,7 @@ def _build_media_cue(pres, slide: Slide) -> str:
 
     return cue.uuid.string
 
+
 def _fill_image_element(el, slide: Slide):
     """Populate the image sub-message on a media element."""
     d = el.image.drawing
@@ -381,7 +387,8 @@ def _fill_video_element(el, slide: Slide):
     v.thumbnail_position = -1.0
     v.end_behavior = END_BEHAVIOR_STOP_ON_CLEAR
     v.soft_loop_duration = 0.5
-    
+
+
 def _write_bundle(
     pro_bytes: bytes, name: str, slides: list[Slide], output_path: str
 ) -> None:
@@ -401,9 +408,8 @@ def _write_bundle(
                 zf.write(slide.media_path, zip_path)
                 seen_files.add(zip_path)
 
-def encode_it(
-    slides: list[Slide], name: str, output_path: str
-) -> None:
+
+def encode_it(slides: list[Slide], name: str, output_path: str) -> None:
     """
     Build a .probundle from scratch.
 
@@ -438,6 +444,7 @@ def encode_it(
         f.write(MessageToJson(pres, indent=2))
     print(f"Written: {json_path}")
 
+
 def stat_dir_entries(in_dir: str, out_bundle_name: str):
     input_dir = in_dir
     if not os.path.isdir(input_dir):
@@ -467,6 +474,7 @@ def stat_dir_entries(in_dir: str, out_bundle_name: str):
     # name = args.name or Path(args.output).stem
     slides = [Slide(media_path=e) for e in entries]
     return name, slides
+
 
 def thing():
     print("hello world")

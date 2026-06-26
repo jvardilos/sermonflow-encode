@@ -1,5 +1,3 @@
-
-
 import os
 import struct
 import sys
@@ -11,10 +9,10 @@ from helpers import current_iso_time
 from pco_types import presentation_pb2 as pp7
 from google.protobuf.json_format import MessageToJson
 
-
 IMAGE_EXTS = {".tif", ".tiff", ".png", ".jpg", ".jpeg"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".m4v"}
 AUDIO_EXTS = {".mp3", ".wav", ".aac", ".m4a"}
+
 
 def _scan_zip_entries(bundle_path: str):
     """
@@ -116,8 +114,14 @@ def _scan_zip_entries(bundle_path: str):
             yield filename, data_offset, comp_size
             pos = data_offset + comp_size
 
-def _copy_entry(bundle_path: str, data_offset: int, data_size: int,
-                dest_path: str, chunk: int = 8 * 1024 * 1024) -> None:
+
+def _copy_entry(
+    bundle_path: str,
+    data_offset: int,
+    data_size: int,
+    dest_path: str,
+    chunk: int = 8 * 1024 * 1024,
+) -> None:
     """Copy data_size bytes from bundle_path at data_offset to dest_path in chunks."""
     os.makedirs(os.path.dirname(dest_path) or ".", exist_ok=True)
     with open(bundle_path, "rb") as src, open(dest_path, "wb") as dst:
@@ -129,6 +133,7 @@ def _copy_entry(bundle_path: str, data_offset: int, data_size: int,
                 break
             dst.write(block)
             remaining -= len(block)
+
 
 def _normalize_zip_path(internal_path: str) -> str:
     """Strip absolute macOS path prefix, keeping Media/Assets/... or bare filename."""
@@ -142,8 +147,10 @@ def _normalize_zip_path(internal_path: str) -> str:
             return parts[-1]
     return norm
 
-def extract_bundle(bundle_path: str, output_dir: str,
-                   skip_extensions: set[str] | None = None) -> list[dict]:
+
+def extract_bundle(
+    bundle_path: str, output_dir: str, skip_extensions: set[str] | None = None
+) -> list[dict]:
     """
     Extract all files from the .probundle ZIP using seeking (no full-file read).
 
@@ -156,22 +163,27 @@ def extract_bundle(bundle_path: str, output_dir: str,
     for internal_path, data_offset, data_size in _scan_zip_entries(bundle_path):
         ext = Path(internal_path).suffix.lower()
         if skip_extensions and ext in skip_extensions:
-            print(f"  skipped:   {os.path.basename(internal_path)} ({data_size:,} bytes)")
+            print(
+                f"  skipped:   {os.path.basename(internal_path)} ({data_size:,} bytes)"
+            )
             continue
 
         norm = _normalize_zip_path(internal_path)
         dest = os.path.join(output_dir, norm)
         _copy_entry(bundle_path, data_offset, data_size, dest)
 
-        extracted.append({
-            "filename": os.path.basename(norm),
-            "internal_path": internal_path,
-            "saved_path": norm,
-            "size_bytes": data_size,
-        })
+        extracted.append(
+            {
+                "filename": os.path.basename(norm),
+                "internal_path": internal_path,
+                "saved_path": norm,
+                "size_bytes": data_size,
+            }
+        )
         print(f"  extracted: {norm}  ({data_size / 1024 / 1024:.1f} MB)")
 
     return extracted
+
 
 def inventory_assets(output_dir: str, pres) -> list[dict]:
     """Inventory all media files and cross-reference with cue actions."""
@@ -214,6 +226,7 @@ def inventory_assets(output_dir: str, pres) -> list[dict]:
 
     return assets
 
+
 def build_manifest(bundle_path: str, pres, assets: list[dict]) -> dict:
     bundle_size = os.path.getsize(bundle_path) / 1024 / 1024
     by_type: dict[str, int] = {}
@@ -251,8 +264,9 @@ def build_manifest(bundle_path: str, pres, assets: list[dict]) -> dict:
         "cue_groups": cue_groups,
     }
 
+
 def decode(bundle: str, out_dir: str, extract: bool):
-    if extract: # Extract media included
+    if extract:  # Extract media included
         extracted = extract_bundle(bundle, os.path.join(out_dir, "assets"))
     else:
         # Extract only the .pro file (fast — skip media)
@@ -262,13 +276,17 @@ def decode(bundle: str, out_dir: str, extract: bool):
             if internal_path.endswith(".pro"):
                 pro_save = os.path.join(out_dir, os.path.basename(internal_path))
                 _copy_entry(bundle, data_offset, data_size, pro_save)
-                print(f"  extracted: {os.path.basename(internal_path)} ({data_size:,} bytes)")
-                extracted.append({
-                    "filename": os.path.basename(internal_path),
-                    "internal_path": internal_path,
-                    "saved_path": os.path.basename(internal_path),
-                    "size_bytes": data_size,
-                })
+                print(
+                    f"  extracted: {os.path.basename(internal_path)} ({data_size:,} bytes)"
+                )
+                extracted.append(
+                    {
+                        "filename": os.path.basename(internal_path),
+                        "internal_path": internal_path,
+                        "saved_path": os.path.basename(internal_path),
+                        "size_bytes": data_size,
+                    }
+                )
 
     # --- Step 2: Decode .pro ---
     pro_files = list(Path(out_dir).rglob("*.pro"))
@@ -305,18 +323,24 @@ def decode(bundle: str, out_dir: str, extract: bool):
                         seen.add(fname)
                         ext = Path(fname).suffix.lower()
                         ftype = (
-                            "image" if ext in IMAGE_EXTS else
-                            "video" if ext in VIDEO_EXTS else
-                            "audio" if ext in AUDIO_EXTS else "other"
+                            "image"
+                            if ext in IMAGE_EXTS
+                            else (
+                                "video"
+                                if ext in VIDEO_EXTS
+                                else "audio" if ext in AUDIO_EXTS else "other"
+                            )
                         )
-                        assets.append({
-                            "filename": fname,
-                            "path": local.path,
-                            "root": local.root,
-                            "type": ftype,
-                            "format": ext.lstrip("."),
-                            "referenced_by_cues": [cue.uuid.string],
-                        })
+                        assets.append(
+                            {
+                                "filename": fname,
+                                "path": local.path,
+                                "root": local.root,
+                                "type": ftype,
+                                "format": ext.lstrip("."),
+                                "referenced_by_cues": [cue.uuid.string],
+                            }
+                        )
                     else:
                         for a in assets:
                             if a["filename"] == fname:
@@ -335,8 +359,10 @@ def decode(bundle: str, out_dir: str, extract: bool):
     print(f"  Cues:         {len(pres.cues)}")
     print(f"  Cue groups:   {len(pres.cue_groups)}")
     for cg in pres.cue_groups:
-        print(f"    Group {cg.group.uuid.string[:8]}... → {len(cg.cue_identifiers)} cues")
+        print(
+            f"    Group {cg.group.uuid.string[:8]}... → {len(cg.cue_identifiers)} cues"
+        )
     print(f"  Assets referenced in .pro: {len(assets)}")
     for a in assets:
-        label = f"  {a.get('size_mb', '?')} MB" if 'size_mb' in a else ""
-        print(f"    {a['type']:6s}  {a['filename']}{label}")    
+        label = f"  {a.get('size_mb', '?')} MB" if "size_mb" in a else ""
+        print(f"    {a['type']:6s}  {a['filename']}{label}")

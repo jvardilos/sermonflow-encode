@@ -1,4 +1,4 @@
-#TODO: don't use a generalized thing, this is a bad practice but keep things here for now
+# TODO: don't use a generalized thing, this is a bad practice but keep things here for now
 
 import time
 
