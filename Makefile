@@ -3,6 +3,13 @@ PROTO_DIR  := ProPresenter7-Proto/proto
 PCO_DIR    := pco_types
 VENV       := deps
 
+# BSD sed (macOS) requires -i '', GNU sed (Linux) requires -i alone
+ifeq ($(shell uname), Darwin)
+    SED_INPLACE := sed -i ''
+else
+    SED_INPLACE := sed -i
+endif
+
 .PHONY: all setup generate clean help
 
 all: generate
@@ -31,7 +38,7 @@ generate: setup ProPresenter7-Proto
 		--python_out=$(PCO_DIR) \
 		$(PROTO_DIR)/*.proto
 	# Rewrite bare sibling imports to package-relative so pco_types works as a package
-	find $(PCO_DIR) -maxdepth 1 -name "*_pb2.py" -exec sed -i '' \
+	find $(PCO_DIR) -maxdepth 1 -name "*_pb2.py" -exec $(SED_INPLACE) \
 		's/^import \([a-zA-Z_]*_pb2\) as/from pco_types import \1 as/' {} \;
 	touch $(PCO_DIR)/__init__.py
 	@echo "Generated $(PCO_DIR)/"

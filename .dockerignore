@@ -1,0 +1,10 @@
+deps/
+pco_types/
+ProPresenter7-Proto/
+__pycache__/
+*.pyc
+*.probundle
+*.probundle.json
+in/
+output/
+.DS_Store
