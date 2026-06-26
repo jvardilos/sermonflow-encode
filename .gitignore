@@ -1,9 +1,9 @@
 __pycache__
+__init__.py
+.pytest_cache
 .DS_Store
 pco_types
 output*
 deps
-.vscode
 *.probundle
-*.json
 in
