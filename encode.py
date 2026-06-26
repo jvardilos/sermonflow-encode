@@ -285,11 +285,11 @@ def _build_blank_cue(pres) -> str:
     cue = pres.cues.add()
     cue.uuid.string = _new_uuid()
     cue.completion_action_type = COMPLETION_ACTION_TYPE_LAST
-    cue.is_enabled = True
+    # cue.is_enabled = True  # field absent from Cue proto
 
     action = cue.actions.add()
     action.uuid.string = _new_uuid()
-    action.is_enabled = True
+    # action.is_enabled = True  # field absent from Action proto
     action.type = ACTION_TYPE_PRESENTATION_SLIDE
     action.slide.presentation.base_slide.size.width = 1920.0
     action.slide.presentation.base_slide.size.height = 1080.0
