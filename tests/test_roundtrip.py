@@ -40,7 +40,7 @@ def test_roundtrip_images_byte_perfect(tmp_path):
     (in_dir / "slide3.png").write_bytes(make_png(800, 600))
 
     encode(str(tmp_path / "out.probundle"), str(in_dir), "RoundtripTest")
-    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"), extract=True)
+    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"))
 
     _assert_no_corruption(in_dir, tmp_path / "out")
 
@@ -52,7 +52,7 @@ def test_roundtrip_video_byte_perfect(tmp_path):
     (in_dir / "clip.mov").write_bytes(video)
 
     encode(str(tmp_path / "out.probundle"), str(in_dir), "VideoTest")
-    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"), extract=True)
+    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"))
 
     _assert_no_corruption(in_dir, tmp_path / "out")
 
@@ -65,7 +65,7 @@ def test_roundtrip_mixed_media_byte_perfect(tmp_path):
     (in_dir / "c_image.jpg").write_bytes(make_jpeg())
 
     encode(str(tmp_path / "out.probundle"), str(in_dir), "MixedTest")
-    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"), extract=True)
+    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"))
 
     _assert_no_corruption(in_dir, tmp_path / "out")
 
@@ -79,7 +79,7 @@ def test_roundtrip_larger_file_no_corruption(tmp_path):
     (in_dir / "large.tif").write_bytes(large_payload)
 
     encode(str(tmp_path / "out.probundle"), str(in_dir), "LargeTest")
-    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"), extract=True)
+    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"))
 
     extracted = tmp_path / "out" / "assets" / "Media" / "Assets" / "large.tif"
     assert extracted.read_bytes() == large_payload
@@ -95,7 +95,7 @@ def test_roundtrip_slide_count_matches_input_files(tmp_path):
     (in_dir / "c.jpg").write_bytes(make_jpeg())
 
     encode(str(tmp_path / "out.probundle"), str(in_dir), "CountTest")
-    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"), extract=False)
+    decode(str(tmp_path / "out.probundle"), str(tmp_path / "out"))
 
     with open(tmp_path / "out" / "presentation.json") as f:
         data = json.load(f)
@@ -129,7 +129,7 @@ def test_roundtrip_manifest_asset_count_matches_input(tmp_path):
 
     bundle = str(tmp_path / "out.probundle")
     encode(bundle, str(in_dir), "ManifestTest")
-    decode(bundle, str(tmp_path / "out"), extract=True)
+    decode(bundle, str(tmp_path / "out"))
 
     with open(tmp_path / "out" / "manifest.json") as f:
         manifest = json.load(f)
@@ -143,7 +143,7 @@ def test_roundtrip_presentation_name_survives_encode_decode(tmp_path):
 
     bundle = str(tmp_path / "out.probundle")
     encode(bundle, str(in_dir), "SpecificName")
-    decode(bundle, str(tmp_path / "out"), extract=False)
+    decode(bundle, str(tmp_path / "out"))
 
     with open(tmp_path / "out" / "presentation.json") as f:
         data = json.load(f)

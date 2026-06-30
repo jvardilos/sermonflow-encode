@@ -1,22 +1,18 @@
+"""Encode a directory of media files into a ProPresenter 7 .probundle."""
+
 import os
 import sys
 import struct
 import uuid
-from pathlib import Path
-
-from dataclasses import dataclass, field
-
-from typing import Optional
 import zipfile
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Optional
+from urllib.parse import quote as url_quote
 
 from google.protobuf.json_format import MessageToJson
 
-from pco_types import presentation_pb2 as _pp7_pres
-from pco_types import action_pb2 as _pp7_action
-from pco_types import cue_pb2 as _pp7_cue
-from pco_types import basicTypes_pb2 as _pp7_basic
-
-from urllib.parse import quote as url_quote
+from pco_types import presentation_pb2 as pp7
 
 # ── enum constants ────────────────────────────────────────────────────────────
 ACTION_TYPE_PRESENTATION_SLIDE = 11
@@ -28,7 +24,7 @@ PLATFORM_MACOS = 1
 APPLICATION_PROPRESENTER = 1
 ROOT_SHOW = 10  # URL.LocalRelativePath.Root
 
-# ── format tables ──────────────────────────────────────────────────────────────
+# ── format tables ─────────────────────────────────────────────────────────────
 _IMAGE_FMT = {
     ".tif": "tiff",
     ".tiff": "tiff",
@@ -54,64 +50,10 @@ _PRORES_FOURCC = {
 }
 _H265_FOURCC = {b"hvc1", b"hev1", b"dvh1", b"dvhe"}
 
+SUPPORTED_EXTS = set(_IMAGE_FMT) | set(_VIDEO_FMT)
 
-# TODO: look into this and see where visibility is not coming in here
-@dataclass
-class Slide:
-    """
-    Describes one cue (one visible slide) in the presentation.
 
-    media_path  : local filesystem path to the media file, or None for a blank cue
-    label       : text label shown in PP7's slide panel (defaults to filename)
-    duration    : video duration in seconds (auto-detected if omitted)
-    frame_rate  : video frame rate (auto-detected or default 23.976)
-    width/height: display dimensions (auto-detected from image; default 1920x1080 for video)
-    """
-
-    media_path: Optional[str]
-    label: str = ""
-    duration: float = 0.0
-    frame_rate: float = 23.976024627685547
-    width: float = 1920.0
-    height: float = 1080.0
-
-    # resolved in __post_init__
-    media_type: str = field(default="", init=False)  # "image" | "video" | "blank"
-    format_str: str = field(default="", init=False)  # PP7 metadata.format
-
-    def __post_init__(self):
-        if not self.media_path:
-            self.media_type = "blank"
-            self.format_str = ""
-            return
-
-        if not self.label:
-            self.label = Path(self.media_path).name
-
-        ext = Path(self.media_path).suffix.lower()
-
-        if ext in _IMAGE_FMT:
-            self.media_type = "image"
-            self.format_str = _IMAGE_FMT[ext]
-            w, h = _detect_image_size(self.media_path)
-            if self.width == 1920.0 and self.height == 1080.0:
-                self.width, self.height = w, h
-
-        elif ext in _VIDEO_FMT:
-            self.media_type = "video"
-            fmt = _VIDEO_FMT[ext]
-            if fmt is None:
-                fmt = _detect_mov_format(self.media_path)
-            self.format_str = fmt
-            if self.duration == 0.0:
-                self.duration = _detect_video_duration(self.media_path)
-
-        else:
-            raise ValueError(
-                f"Unsupported extension: {ext!r}\n"
-                f"Supported: {sorted(_IMAGE_FMT) + sorted(_VIDEO_FMT)}"
-            )
-
+# ══ media detection ════════════════════════════════════════════════════════════
 
 def _detect_mov_format(path: str) -> str:
     """Detect codec in a .mov/.mp4 by scanning moov atom for codec FourCC."""
@@ -227,7 +169,72 @@ def _detect_image_size(path: str) -> tuple[float, float]:
     return 1920.0, 1080.0
 
 
-def _build_application_info(pres):
+# ══ slide model ════════════════════════════════════════════════════════════════
+
+@dataclass
+class Slide:
+    """
+    Describes one cue (one visible slide) in the presentation.
+
+    media_path  : local filesystem path to the media file, or None for a blank cue
+    label       : text label shown in PP7's slide panel (defaults to filename)
+    duration    : video duration in seconds (auto-detected if omitted)
+    frame_rate  : video frame rate (auto-detected or default 23.976)
+    width/height: display dimensions (auto-detected from image; default 1920x1080 for video)
+    """
+
+    media_path: Optional[str]
+    label: str = ""
+    duration: float = 0.0
+    frame_rate: float = 23.976024627685547
+    width: float = 1920.0
+    height: float = 1080.0
+
+    # resolved in __post_init__
+    media_type: str = field(default="", init=False)  # "image" | "video" | "blank"
+    format_str: str = field(default="", init=False)  # PP7 metadata.format
+
+    def __post_init__(self):
+        if not self.media_path:
+            self.media_type = "blank"
+            self.format_str = ""
+            return
+
+        if not self.label:
+            self.label = Path(self.media_path).name
+
+        ext = Path(self.media_path).suffix.lower()
+
+        if ext in _IMAGE_FMT:
+            self.media_type = "image"
+            self.format_str = _IMAGE_FMT[ext]
+            w, h = _detect_image_size(self.media_path)
+            if self.width == 1920.0 and self.height == 1080.0:
+                self.width, self.height = w, h
+
+        elif ext in _VIDEO_FMT:
+            self.media_type = "video"
+            fmt = _VIDEO_FMT[ext]
+            if fmt is None:
+                fmt = _detect_mov_format(self.media_path)
+            self.format_str = fmt
+            if self.duration == 0.0:
+                self.duration = _detect_video_duration(self.media_path)
+
+        else:
+            raise ValueError(
+                f"Unsupported extension: {ext!r}\n"
+                f"Supported: {sorted(_IMAGE_FMT) + sorted(_VIDEO_FMT)}"
+            )
+
+
+# ══ proto builders ═════════════════════════════════════════════════════════════
+
+def _new_uuid() -> str:
+    return str(uuid.uuid4()).upper()
+
+
+def _build_application_info(pres) -> None:
     """Fill in applicationInfo exactly as seen in the real bundle."""
     ai = pres.application_info
     ai.platform = PLATFORM_MACOS
@@ -239,57 +246,16 @@ def _build_application_info(pres):
     ai.application_version.build = "335544583"
 
 
-def _new_uuid() -> str:
-    return str(uuid.uuid4()).upper()
-
-
-def _build_presentation(name: str, slides: list[Slide]) -> tuple[object, list[str]]:
-    """
-    Build and return (Presentation proto, list[cue_uuid_str]).
-    All slides go into a single cue group.
-    """
-    pres = _pp7_pres.Presentation()
-    _build_application_info(pres)
-
-    pres.uuid.string = _new_uuid()
-    pres.name = name
-
-    pres.background.color.red = 1.0
-    pres.background.color.green = 1.0
-    pres.background.color.blue = 1.0
-    pres.background.color.alpha = 1.0
-
-    pres.chord_chart.platform = PLATFORM_MACOS
-
-    cue_uuids = []
-    for slide in slides:
-        if slide.media_type == "blank":
-            uid = _build_blank_cue(pres)
-        else:
-            uid = _build_media_cue(pres, slide)
-        cue_uuids.append(uid)
-
-    # Single cue group containing all slides
-    cg = pres.cue_groups.add()
-    cg.group.uuid.string = _new_uuid()
-    cg.group.hotKey.SetInParent()
-    for uid in cue_uuids:
-        ci = cg.cue_identifiers.add()
-        ci.string = uid
-
-    return pres, cue_uuids
-
-
 def _build_blank_cue(pres) -> str:
     """Add a blank/spacer cue with a single empty slide action. Returns cue UUID."""
     cue = pres.cues.add()
     cue.uuid.string = _new_uuid()
     cue.completion_action_type = COMPLETION_ACTION_TYPE_LAST
-    # cue.is_enabled = True  # field absent from Cue proto
+    cue.isEnabled = True
 
     action = cue.actions.add()
     action.uuid.string = _new_uuid()
-    # action.is_enabled = True  # field absent from Action proto
+    action.isEnabled = True
     action.type = ACTION_TYPE_PRESENTATION_SLIDE
     action.slide.presentation.base_slide.size.width = 1920.0
     action.slide.presentation.base_slide.size.height = 1080.0
@@ -300,9 +266,7 @@ def _build_blank_cue(pres) -> str:
 
 
 def _build_media_cue(pres, slide: Slide) -> str:
-    """
-    Add a full image-or-video cue (empty canvas + foreground media). Returns cue UUID.
-    """
+    """Add a full image-or-video cue (empty canvas + foreground media). Returns cue UUID."""
     zip_path = f"Media/Assets/{Path(slide.media_path).name}"
     abs_str = (
         "file:///Library/Application%20Support/ProPresenter/Media/Assets/"
@@ -312,13 +276,13 @@ def _build_media_cue(pres, slide: Slide) -> str:
     cue = pres.cues.add()
     cue.uuid.string = _new_uuid()
     cue.completion_action_type = COMPLETION_ACTION_TYPE_LAST
-    # cue.is_enabled = True
+    cue.isEnabled = True
 
     # ── Action 1: empty canvas ────────────────────────────────────────────
     a1 = cue.actions.add()
     a1.uuid.string = _new_uuid()
     a1.label.text = slide.label
-    # a1.is_enabled = True
+    a1.isEnabled = True
     a1.type = ACTION_TYPE_PRESENTATION_SLIDE
     a1.slide.presentation.base_slide.size.width = slide.width
     a1.slide.presentation.base_slide.size.height = slide.height
@@ -328,7 +292,7 @@ def _build_media_cue(pres, slide: Slide) -> str:
     # ── Action 2: foreground media ────────────────────────────────────────
     a2 = cue.actions.add()
     a2.uuid.string = _new_uuid()
-    # a2.is_enabled = True
+    a2.isEnabled = True
     a2.type = ACTION_TYPE_MEDIA
     a2.media.layer_type = LAYER_TYPE_FOREGROUND
 
@@ -353,7 +317,7 @@ def _build_media_cue(pres, slide: Slide) -> str:
     return cue.uuid.string
 
 
-def _fill_image_element(el, slide: Slide):
+def _fill_image_element(el, slide: Slide) -> None:
     """Populate the image sub-message on a media element."""
     d = el.image.drawing
     d.natural_size.width = slide.width
@@ -363,7 +327,7 @@ def _fill_image_element(el, slide: Slide):
     d.crop_insets.SetInParent()
 
 
-def _fill_video_element(el, slide: Slide):
+def _fill_video_element(el, slide: Slide) -> None:
     """Populate the video sub-message on a media element."""
     d = el.video.drawing
     d.natural_size.width = slide.width
@@ -389,35 +353,93 @@ def _fill_video_element(el, slide: Slide):
     v.soft_loop_duration = 0.5
 
 
-def _write_bundle(
-    pro_bytes: bytes, name: str, slides: list[Slide], output_path: str
-) -> None:
+def build_presentation(name: str, slides: list[Slide]):
+    """Build a Presentation proto with all slides in a single cue group."""
+    pres = pp7.Presentation()
+    _build_application_info(pres)
+
+    pres.uuid.string = _new_uuid()
+    pres.name = name
+
+    pres.background.color.red = 1.0
+    pres.background.color.green = 1.0
+    pres.background.color.blue = 1.0
+    pres.background.color.alpha = 1.0
+
+    pres.chord_chart.platform = PLATFORM_MACOS
+
+    cue_uuids = [
+        _build_blank_cue(pres) if slide.media_type == "blank"
+        else _build_media_cue(pres, slide)
+        for slide in slides
+    ]
+
+    cg = pres.cue_groups.add()
+    cg.group.uuid.string = _new_uuid()
+    cg.group.hotKey.SetInParent()
+    for uid in cue_uuids:
+        cg.cue_identifiers.add().string = uid
+
+    return pres
+
+
+# ══ bundle writer ══════════════════════════════════════════════════════════════
+
+def write_bundle(pro_bytes: bytes, name: str, slides: list[Slide], output_path: str) -> None:
     """Write the .probundle ZIP: .pro at root + Media/Assets/* for each slide."""
-    pro_name = name + ".pro"
     with zipfile.ZipFile(
         output_path, "w", compression=zipfile.ZIP_STORED, allowZip64=True
     ) as zf:
-        zf.writestr(pro_name, pro_bytes)
-        seen_files: set[str] = set()
+        zf.writestr(name + ".pro", pro_bytes)
+        seen: set[str] = set()
         for slide in slides:
             if not slide.media_path:
                 continue
-            fname = Path(slide.media_path).name
-            zip_path = f"Media/Assets/{fname}"
-            if zip_path not in seen_files:
+            zip_path = f"Media/Assets/{Path(slide.media_path).name}"
+            if zip_path not in seen:
                 zf.write(slide.media_path, zip_path)
-                seen_files.add(zip_path)
+                seen.add(zip_path)
 
 
-def encode_it(slides: list[Slide], name: str, output_path: str) -> None:
+# ══ public API ═════════════════════════════════════════════════════════════════
+
+def collect_slides(in_dir: str) -> list[Slide]:
     """
-    Build a .probundle from scratch.
+    Gather supported media files from in_dir, ordered by filename, as Slides.
 
-    slides      : list of Slide objects describing the cue order
-    name        : presentation name (also used for the .pro filename inside the ZIP)
-    output_path : destination .probundle path
-    also_write_json : if True, write <output_path>.json alongside (for inspection)
+    Ordering note: currently a simple case-insensitive name sort. See the README
+    for ideas on sermon-aware ordering.
     """
+    if not os.path.isdir(in_dir):
+        print(f"ERROR: input directory not found: {in_dir!r}")
+        sys.exit(1)
+
+    paths = sorted(
+        (
+            os.path.join(in_dir, f)
+            for f in os.listdir(in_dir)
+            if Path(f).suffix.lower() in SUPPORTED_EXTS
+            and os.path.isfile(os.path.join(in_dir, f))
+        ),
+        key=lambda p: Path(p).name.lower(),
+    )
+
+    if not paths:
+        print(f"ERROR: no supported media files in {in_dir!r}")
+        print(f"  Supported extensions: {sorted(SUPPORTED_EXTS)}")
+        sys.exit(1)
+
+    print(f"Found {len(paths)} media file(s) in {in_dir!r}:")
+    for p in paths:
+        print(f"  {Path(p).name}")
+
+    return [Slide(media_path=p) for p in paths]
+
+
+def encode(output_path: str, in_dir: str, name: str) -> None:
+    """Build a .probundle (plus a .json sidecar) from every supported file in in_dir."""
+    slides = collect_slides(in_dir)
+
     print(f"Building presentation: {name!r}  ({len(slides)} slides)")
     for s in slides:
         tag = f"{s.media_type}/{s.format_str}" if s.media_type != "blank" else "blank"
@@ -425,61 +447,19 @@ def encode_it(slides: list[Slide], name: str, output_path: str) -> None:
         dur = f"  dur={s.duration:.1f}s" if s.media_type == "video" else ""
         print(f"  {tag:16s}  {size_mb:7.1f} MB  {s.label}{dur}")
 
-    pres, _ = _build_presentation(name, slides)
+    pres = build_presentation(name, slides)
     pro_bytes = pres.SerializeToString()
     print(f"\n.pro size: {len(pro_bytes):,} bytes")
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    _write_bundle(pro_bytes, name, slides, output_path)
+    write_bundle(pro_bytes, name, slides, output_path)
 
     total_mb = sum(
         os.path.getsize(s.media_path) / 1024 / 1024 for s in slides if s.media_path
     )
-    print(
-        f"Written: {output_path}  ({total_mb + len(pro_bytes)/1024/1024:.1f} MB total)"
-    )
+    print(f"Written: {output_path}  ({total_mb + len(pro_bytes) / 1024 / 1024:.1f} MB total)")
 
     json_path = output_path + ".json"
     with open(json_path, "w") as f:
         f.write(MessageToJson(pres, indent=2))
     print(f"Written: {json_path}")
-
-
-def stat_dir_entries(in_dir: str, out_bundle_name: str):
-    input_dir = in_dir
-    if not os.path.isdir(input_dir):
-        print(f"ERROR: input directory not found: {input_dir!r}")
-        sys.exit(1)
-
-    supported_exts = set(_IMAGE_FMT) | set(_VIDEO_FMT)
-    entries = [
-        os.path.join(input_dir, f)
-        for f in os.listdir(input_dir)
-        if Path(f).suffix.lower() in supported_exts
-        and os.path.isfile(os.path.join(input_dir, f))
-    ]
-    # if args.sort == "name":
-    entries.sort(key=lambda p: Path(p).name.lower())
-
-    if not entries:
-        print(f"ERROR: no supported media files in {input_dir!r}")
-        print(f"  Supported extensions: {sorted(supported_exts)}")
-        sys.exit(1)
-
-    print(f"Found {len(entries)} media file(s) in {input_dir!r}:")
-    for e in entries:
-        print(f"  {Path(e).name}")
-
-    name = out_bundle_name
-    # name = args.name or Path(args.output).stem
-    slides = [Slide(media_path=e) for e in entries]
-    return name, slides
-
-
-def thing():
-    print("hello world")
-
-
-def encode(out_dir: str, in_dir: str, out_bundle_name: str):
-    name, slides = stat_dir_entries(in_dir, out_bundle_name)
-    encode_it(slides, name, out_dir)
